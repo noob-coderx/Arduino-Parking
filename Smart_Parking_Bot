@@ -1,0 +1,423 @@
+#include <LiquidCrystal.h>
+
+// Pin definitions
+#define triggerPin 6
+#define echoPin 5
+#define rs 12
+#define enable 11
+#define d4 7
+#define d5 4
+#define d6 3
+#define d7 2
+#define time_counting_pin 10
+#define small_car_pin 8
+#define medium_car_pin 9
+
+// Parking configuration variables
+int set_of_parking = 4; // Each set has space for 4 small vehicles and are in a straight line
+int columns_of_parking = 2;
+int small_car = 0;
+int medium_car = 0;
+int full_capacity = 4 * set_of_parking * columns_of_parking;
+
+// Arrays to represent parking space, time records, and vehicle type
+float parking_space[16][2];    // This creates a 2D array that will show us the map of the parking
+float time_records[16][2];
+float small_or_medium[16][2];
+
+// LCD object for display
+LiquidCrystal lcd_1(rs, enable, d4, d5, d6, d7);
+
+void setup()
+{
+  Serial.begin(9600);
+  pinMode(echoPin, INPUT);
+  pinMode(triggerPin, OUTPUT);
+  Serial.println("communication is working");
+
+  // Initializing parking_space array
+  for (int i = 0; i <= 4 * set_of_parking - 1; i++)
+  {
+    for (int j = 0; j <= columns_of_parking - 1; j++)
+    {
+      parking_space[i][j] = -1;
+    }
+  }
+
+  // Initializing time_records array
+  for (int i = 0; i <= 4 * set_of_parking - 1; i++)
+  {
+    for (int j = 0; j <= columns_of_parking - 1; j++)
+    {
+      time_records[i][j] = 0;
+    }
+  }
+
+  // Initializing small_or_medium array
+  for (int i = 0; i <= 4 * set_of_parking - 1; i++)
+  {
+    for (int j = 0; j <= columns_of_parking - 1; j++)
+    {
+      small_or_medium[i][j] = 0;
+    }
+  }
+
+  // LCD initialization and display initial messages
+  display_lcd_on_line_1("The Max time");
+  display_lcd_on_line_2("You may Park");
+  display_lcd_on_line_1("Is 5 hrs");
+  display_lcd_on_line_1("Max Capacity:");
+  display_lcd_on_line_2(String(full_capacity));
+
+  // Set pin modes
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(small_car_pin, INPUT_PULLUP);
+  pinMode(medium_car_pin, INPUT_PULLUP);
+  pinMode(time_counting_pin, INPUT_PULLUP);
+}
+
+void loop()
+{
+  double Distance_From_the_car = Distance_Vehicle(triggerPin, echoPin);
+  if (Distance_From_the_car <= 2)
+  {
+    if (digitalRead(small_car_pin) == LOW)
+    {
+      small_car_application(parking_space, time_records);
+    }
+    else if (digitalRead(medium_car_pin) == LOW)
+    {
+      medium_car_application(parking_space, time_records);
+    }
+  }
+  time_correction(parking_space,time_records,set_of_parking*4,columns_of_parking);
+}
+
+void time_correction(float a[][2], float time_records[][2], int rows, int columns)
+{
+  int n = rows;
+  int m = columns;
+  float elapsed_time[n][m];
+  for (int i = 0; i <= 4 * set_of_parking - 1; i++)
+  {
+    for (int j = 0; j <= columns_of_parking - 1; j++)
+    {
+      elapsed_time[i][j] = 0;
+    }
+  }
+  float current_time = millis()/1000;
+  for (int k = 0; k <= m - 1; k++)
+  {
+    for (int i = 0; i <= n - 1; i++)
+    {
+      if (parking_space[i][k] != -1)
+      {
+        elapsed_time[i][k] = current_time - time_records[i][k];
+        a[i][k] = a[i][k] - elapsed_time[i][k];
+        if (a[i][k] <= 0)
+        {
+          a[i][k] = -1;
+          small_or_medium[i][k] = 0;
+          time_records[i][k] = 0;
+        }
+      }
+    }
+  }
+}
+
+double Distance_Vehicle(int Trig_Pin, int Echo_Pin)
+{
+  digitalWrite(Trig_Pin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(Trig_Pin, HIGH);
+  delayMicroseconds(10);
+  double time = pulseIn(Echo_Pin, HIGH, 10000);
+  double centimetre = 0.01723 * time;
+  double metre = centimetre / 1000;
+  if (time == 0)
+  {
+    Distance_Vehicle(Trig_Pin, Echo_Pin);
+  }
+  else
+  {
+    return metre;
+  }
+}
+
+void display_lcd_on_line_1(String line)
+{
+  lcd_1.begin(16, 2);
+  lcd_1.setCursor(0, 0);
+  lcd_1.print(line);
+  delay(1000);
+  lcd_1.clear();
+}
+
+void display_lcd_on_line_2(String line)
+{
+  lcd_1.begin(16, 2);
+  lcd_1.setCursor(0, 1);
+  lcd_1.print(line);
+  delay(1000);
+  lcd_1.clear();
+}
+
+void small_car_application(float parking_space[][2], float time_records[][2])
+{
+  display_lcd_on_line_1("how long?");
+  display_lcd_on_line_1("push timer");
+  int time_hrs = timer_car();
+  int alloted_row = -2;
+  int alloted_column = -2;
+  allotment_of_space_small_car(parking_space, time_records, set_of_parking * 4, columns_of_parking, time_hrs, alloted_row, alloted_column);
+  Serial.println(alloted_row);
+  path_finder(alloted_row, alloted_column, parking_space, 4 * set_of_parking, columns_of_parking);
+  if (alloted_row < 0)
+  {
+    help_small_car(parking_space, set_of_parking * 4, columns_of_parking);
+  }
+}
+
+void medium_car_application(float parking_space[][2], float time_records[][2])
+{
+  display_lcd_on_line_1("how long?");
+  display_lcd_on_line_1("push timer");
+  int time_hrs = timer_car();
+  int alloted_row = -2;
+  int alloted_column = -2;
+  allotment_of_space_medium_car(parking_space, time_records, set_of_parking * 4, columns_of_parking, time_hrs, alloted_row, alloted_column);
+  Serial.println(alloted_row);
+  path_finder(alloted_row, alloted_column, parking_space, set_of_parking * 4, columns_of_parking);
+  if (alloted_row < 0)
+  {
+    help_medium_car(parking_space, set_of_parking * 4, columns_of_parking);
+  }
+}
+
+int timer_car()
+{
+  int time_hrs = 0;
+  int seconds = 0;
+  if (digitalRead(time_counting_pin) == HIGH)
+  {
+    delay(1000);
+  }
+  while (digitalRead(time_counting_pin) == LOW)
+  {
+    seconds++;
+    display_lcd_on_line_1(String(seconds));
+  }
+  time_hrs = seconds;
+  if (time_hrs > 5)
+  {
+    time_hrs = 5;
+  }
+  display_lcd_on_line_1("Parking time");
+  display_lcd_on_line_2(String(time_hrs));
+  return time_hrs;
+}
+
+void allotment_of_space_small_car(float a[][2], float time_records[][2], int row_number, int column_number, int timer_car, int &alloted_row, int &alloted_column)
+{
+  int n = row_number;
+  int m = column_number;
+  timer_car = timer_car * 3600; // Convert to seconds
+  for (int k = 0; k <= m - 1; k++)
+  {
+    for (int i = 0; i <= n - 1; i = i + 4)
+    {
+      bool flag = 0;
+      bool flag2 = 0;
+      for (int j = 0; j <= 3; j++)
+      {
+        if (a[i + j][k] == -1)
+        {
+          flag2 = 1;
+        }
+        else if (a[i + j][k] != -1)
+        {
+          flag = 1;
+        }
+      }
+      if (flag == 1 && flag2 == 1)
+      {
+        if (a[i][k] == -1 && a[i + 1][k] != -1)
+        {
+          a[i][k] = timer_car;
+          alloted_row = i;
+          alloted_column = k;
+          float initial_time = millis()/1000;
+          time_records[i][k] = initial_time;
+          small_or_medium[i][k] = 1;
+          return;
+        }
+        else if (a[i][k] != -1 && a[i + 1][k] == -1)
+        {
+          a[i + 1][k] = timer_car;
+          alloted_row = i + 1;
+          alloted_column = k;
+          float initial_time = millis()/1000;
+          time_records[i + 1][k] = initial_time;
+          small_or_medium[i + 1][k] = 1;
+          return;
+        }
+        else if (a[i][k] == -1 && a[i + 1][k] == -1)
+        {
+          a[i][k] = timer_car;
+          alloted_row = i + 1;
+          alloted_column = k;
+          float initial_time = millis()/1000;
+          time_records[i + 1][k] = initial_time;
+          small_or_medium[i + 1][k] = 1;
+          return;
+        }
+        else if (a[i + 2][k] != -1 && a[i + 3][k] == -1)
+        {
+          a[i + 3][k] = timer_car;
+          alloted_row = i + 3;
+          alloted_column = k;
+          float initial_time = millis()/1000;
+          time_records[i + 3][k] = initial_time;
+          small_or_medium[i + 3][k] = 1;
+          return;
+        }
+        else if (a[i + 2][k] == -1 && a[i + 3][k] != -1)
+        {
+          a[i + 2][k] = timer_car;
+          alloted_row = i + 2;
+          alloted_column = k;
+          float initial_time = millis()/1000;
+          time_records[i + 2][k] = initial_time;
+          small_or_medium[i + 2][k] = 1;
+          return;
+        }
+        else if (a[i + 2][k] == -1 && a[i + 3][k] == -1)
+        {
+          a[i + 2][k] = timer_car;
+          alloted_row = i + 2;
+          alloted_column = k;
+          float initial_time = millis()/1000;
+          time_records[i + 2][k] = initial_time;
+          small_or_medium[i + 2][k] = 1;
+          return;
+        }
+      }
+      if (flag == 0)
+      {
+        a[i][k] = timer_car;
+        alloted_row = i;
+        alloted_column = k;
+        float initial_time = millis()/1000;
+        time_records[i][k] = initial_time;
+        small_or_medium[i][k] = 1;
+        return;
+      }
+    }
+  }
+  alloted_row = -1;
+  alloted_column = -1;
+  return;
+}
+
+void path_finder(int alloted_row, int alloted_column, float a[][2], int row_number, int column_number)
+{
+  if (alloted_row >= 0 && alloted_column >= 0)
+  {
+    display_lcd_on_line_1("Move forward:");
+    display_lcd_on_line_1(String((alloted_row + 1) * 2.5 + int(alloted_row / 4) + 4));
+    display_lcd_on_line_2("metre");
+    if (alloted_column == 0)
+    {
+      display_lcd_on_line_1("Your parking");
+      display_lcd_on_line_2("at left");
+    }
+    else if (alloted_column == 1)
+    {
+      display_lcd_on_line_1("Your parking");
+      display_lcd_on_line_2("at right");
+    }
+  }
+  else
+  {
+    display_lcd_on_line_1("Sorry!");
+    display_lcd_on_line_2("Parking Full");
+  }
+}
+
+void allotment_of_space_medium_car(float a[][2], float time_records[][2], int row_number, int column_number, int timer_car, int &alloted_row, int &alloted_column)
+{
+  timer_car = timer_car * 3600; // Convert to miliseconds
+  int n = row_number;
+  int m = column_number;
+  for (int k = 0; k <= column_number - 1; k++)
+  {
+    for (int i = 0; i <= 4 * set_of_parking - 1; i = i + 4)
+    {
+      for (int j = 0; j <= 2; j++)
+      {
+        if (a[i + j][k] == -1 && a[i + j + 1][k] == -1)
+        {
+          a[i + j][k] = timer_car;
+          a[i + j + 1][k] = timer_car;
+          alloted_row = i + j;
+          alloted_column = k;
+          float initial_time = millis()/1000;
+          time_records[i + j][k] = initial_time;
+          time_records[i + j + 1][k] = initial_time;
+          small_or_medium[i + j][k] = 2;
+          small_or_medium[i + j + 1][k] = 2;
+          return;
+        }
+      }
+    }
+  }
+  alloted_row = -1;
+  alloted_column = -1;
+  return;
+}
+
+void help_small_car(float a[][2], int row_number, int column_number)
+{
+  int n = row_number;
+  int m = column_number;
+  int smallest_i = 0;
+  int smallest_k = 0;
+  for (int k = 0; k <= m - 1; k++)
+  {
+    for (int i = 0; i <= n - 1; i++)
+    {
+      if (a[i][k] < a[smallest_i][smallest_k])
+      {
+        smallest_i = i;
+        smallest_k = k;
+      }
+    }
+  }
+  display_lcd_on_line_1("approx time");
+  display_lcd_on_line_2(String(a[smallest_i][smallest_k]));
+  display_lcd_on_line_1("approx time");
+  display_lcd_on_line_2(String(a[smallest_i][smallest_k]));
+}
+
+void help_medium_car(float a[][2], int row_number, int column_number)
+{
+  int n = row_number;
+  int m = column_number;
+  int smallest_i = 0;
+  int smallest_k = 0;
+  for (int k = 0; k <= m - 1; k++)
+  {
+    for (int i = 0; i <= n - 2; i++)
+    {
+      if (max(a[i][k], a[i + 1][k]) < max(a[smallest_i][smallest_k], a[smallest_i + 1][smallest_k + 1]))
+      {
+        smallest_i = i;
+        smallest_k = k;
+      }
+    }
+  }
+  display_lcd_on_line_1("approx time");
+  display_lcd_on_line_2(String(max(a[smallest_i][smallest_k], a[smallest_i + 1][smallest_k + 1])));
+  display_lcd_on_line_1("Sorry for");
+  display_lcd_on_line_2("Inconvenience");
+}
