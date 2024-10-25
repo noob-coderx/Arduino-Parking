@@ -1,0 +1,1 @@
+Arduino Ready code that can sense a car, allocate a position in a parking region and also tell the exact location where it should park the car, also it will allocate space for big, small and medium cars so as to maximise space utilisation
